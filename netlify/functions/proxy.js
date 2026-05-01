@@ -1,75 +1,61 @@
-// DipWatch Proxy — Netlify serverless function
-// CommonJS format — works on ALL Netlify runtime versions
-// File location in repo: netlify/functions/proxy.js
-
 exports.handler = async function(event) {
-const cors = {
+var cors = {
 ‘Access-Control-Allow-Origin’: ‘*’,
 ‘Access-Control-Allow-Methods’: ‘GET, OPTIONS’,
-‘Content-Type’: ‘application/json’,
-‘Cache-Control’: ‘no-cache’,
+‘Content-Type’: ‘application/json’
 };
 
 if (event.httpMethod === ‘OPTIONS’) {
 return { statusCode: 204, headers: cors, body: ‘’ };
 }
 
-const params = event.queryStringParameters || {};
-const target = params.target;
-
-// Keys: Netlify env vars take priority (secure, server-side).
-// Falls back to browser-passed params for local/direct testing only.
-const TDK = process.env.TWELVE_DATA_KEY || params.tdk || ‘’;
-const FHK = process.env.FINNHUB_KEY     || params.fhk || ‘’;
+var p = event.queryStringParameters || {};
+var target = p.target;
+var TDK = process.env.TWELVE_DATA_KEY || p.tdk || ‘’;
+var FHK = process.env.FINNHUB_KEY || p.fhk || ‘’;
 
 if (!target) {
 return { statusCode: 400, headers: cors, body: JSON.stringify({ error: ‘Missing target’ }) };
 }
 
-let apiUrl = ‘’;
+var apiUrl = ‘’;
 
 if (target === ‘quote’) {
-apiUrl = `https://api.twelvedata.com/quote?symbol=${params.symbol}&apikey=${TDK}`;
-
+apiUrl = ‘https://api.twelvedata.com/quote?symbol=’ + p.symbol + ‘&apikey=’ + TDK;
 } else if (target === ‘history’) {
-const size = params.size || ‘252’;
-apiUrl = `https://api.twelvedata.com/time_series?symbol=${params.symbol}&interval=1day&outputsize=${size}&apikey=${TDK}`;
-
+var size = p.size || ‘252’;
+apiUrl = ‘https://api.twelvedata.com/time_series?symbol=’ + p.symbol + ‘&interval=1day&outputsize=’ + size + ‘&apikey=’ + TDK;
 } else if (target === ‘search’) {
-apiUrl = `https://api.twelvedata.com/symbol_search?symbol=${encodeURIComponent(params.q)}&apikey=${TDK}`;
-
+apiUrl = ‘https://api.twelvedata.com/symbol_search?symbol=’ + encodeURIComponent(p.q) + ‘&apikey=’ + TDK;
 } else if (target === ‘fh_news’) {
-apiUrl = `https://finnhub.io/api/v1/company-news?symbol=${params.symbol}&from=${params.from}&to=${params.to}&token=${FHK}`;
-
+apiUrl = ‘https://finnhub.io/api/v1/company-news?symbol=’ + p.symbol + ‘&from=’ + p.from + ‘&to=’ + p.to + ‘&token=’ + FHK;
 } else if (target === ‘fh_general’) {
-apiUrl = `https://finnhub.io/api/v1/news?category=general&minId=0&token=${FHK}`;
-
+apiUrl = ‘https://finnhub.io/api/v1/news?category=general&minId=0&token=’ + FHK;
 } else if (target === ‘fh_search’) {
-apiUrl = `https://finnhub.io/api/v1/search?q=${encodeURIComponent(params.q)}&token=${FHK}`;
-
+apiUrl = ‘https://finnhub.io/api/v1/search?q=’ + encodeURIComponent(p.q) + ‘&token=’ + FHK;
 } else if (target === ‘fear_greed’) {
 apiUrl = ‘https://production.dataviz.cnn.io/index/fearandgreed/graphdata’;
-
 } else {
-return { statusCode: 400, headers: cors, body: JSON.stringify({ error: `Unknown target: ${target}` }) };
+return { statusCode: 400, headers: cors, body: JSON.stringify({ error: ‘Unknown target’ }) };
 }
 
+var https = require(‘https’);
+
+var result = await new Promise(function(resolve, reject) {
+var req = https.get(apiUrl, { headers: { ‘User-Agent’: ‘DipWatch/1.0’ } }, function(res) {
+var body = ‘’;
+res.on(‘data’, function(chunk) { body += chunk; });
+res.on(‘end’, function() {
 try {
-const https = require(‘https’);
-const result = await new Promise((resolve, reject) => {
-const req = https.get(apiUrl, { headers: { ‘User-Agent’: ‘DipWatch/1.0’ } }, (res) => {
-let body = ‘’;
-res.on(‘data’, chunk => body += chunk);
-res.on(‘end’, () => {
-try { resolve({ status: res.statusCode, body: JSON.parse(body) }); }
-catch(e) { reject(new Error(’JSON parse error: ’ + e.message)); }
+resolve({ status: res.statusCode, body: JSON.parse(body) });
+} catch(e) {
+reject(new Error(‘Parse error’));
+}
 });
 });
 req.on(‘error’, reject);
-req.setTimeout(10000, () => { req.destroy(); reject(new Error(‘Request timed out’)); });
+req.setTimeout(10000, function() { req.destroy(); reject(new Error(‘Timeout’)); });
 });
+
 return { statusCode: result.status, headers: cors, body: JSON.stringify(result.body) };
-} catch (err) {
-return { statusCode: 500, headers: cors, body: JSON.stringify({ error: err.message }) };
-}
 };
